@@ -22,17 +22,18 @@
 
 import argparse
 import datetime
-import os
-import sys
 import math
+import os
 import random
-from typing import Optional
+import sys
 from io import TextIOWrapper
+from typing import Optional
 
 version = "1.0.1"
 
 parser = argparse.ArgumentParser(
-    description="Simple FDR random permutation peak caller"
+    description="Simple FDR random permutation peak caller",
+    allow_abbrev=True,
 )
 parser.add_argument(
     "--n",

@@ -34,11 +34,34 @@ options:
   --seed SEED           Random seed
 ```
 
-- `N`: The number of random shuffle iterations to perform. The default is 100. The higher the number, the more accurate the FDR will be, but the longer the program will take to run.
-- `FDR`: The false discovery rate to use. The default is 0.01. This is calculated as the number of occurrence of peaks in the random shuffles over the number of peaks found in the real data.
-- `FRAC`: The fraction of the data to be used for calculating random shuffles (where 0 means no truncation). The default is 0. This is used to speed up the program, as the random shuffles are calculated on a subset of the data.
-- `MIN_COUNT`: The minimum number of consecutive fragments to consider as a peak. The default is 2.
-- `MIN_QUANT`: The minimum quantile to consider as a peak. The default is 0.95. Higher values will result in fewer peaks being called thus less noise in output.
-- `STEP`: The step size for quantiles. The default is 0.01. Smaller steps results in finer result at the cost of run speed.
+- `N`: The number of random shuffle iterations to perform. The default is `100`. The higher the number, the more accurate the FDR will be, but the longer the program will take to run.
+- `FDR`: The false discovery rate to use. The default is `0.01`. This is calculated as the number of occurrence of peaks in the random shuffles over the number of peaks found in the real data.
+- `FRAC`: The fraction of the data to be used for calculating random shuffles (where 0 means no truncation). The default is `0`. This is used to speed up the program, as the random shuffles are calculated on a subset of the data.
+- `MIN_COUNT`: The minimum number of consecutive fragments to consider as a peak. The default is `2`.
+- `MIN_QUANT`: The minimum quantile to consider as a peak. The default is `0.95`. Higher values will result in fewer peaks being called thus less noise in output.
+- `STEP`: The step size for quantiles. The default is `0.01`. Smaller steps results in finer result at the cost of run speed.
 - `UNIFIED_PEAKS`: The method for calling peak overlaps. The default is `max`. If `max`, the maximum overlap is called as the peak thus results in fewer but larger peaks. If `min`, the minimum overlap is called as one peak and results in more but smaller peaks.
-- `SEED`: Random seed used for shuffling.
+- `SEED`: Random seed used for shuffling. The default is `0`.
+
+## Examples
+
+- Call peaks on a single `gff` file with default parameters:
+  ```bash
+  find_peaks.py path/to/file.gff
+  ```
+- Call peaks on multiple `bedgraph` files with default parameters:
+  ```bash
+  find_peaks.py path/to/file1.bedgraph path/to/file2.bedgraph
+  ```
+- Shuffle the first 1k reads for 1000 iterations and filter result by 0.05 false discovery rate:
+  ```bash
+  find_peaks.py --n 1000 --frac 1000 --fdr 0.05 path/to/file.bedgraph
+  ```
+- Set random seed to 42:
+  ```bash
+  find_peaks.py --seed 42 path/to/file.bedgraph
+  ```
+- Call peaks with minimum 5 consecutive fragments and minimum 0.99 quantile:
+  ```bash
+  find_peaks.py --min_count 5 --min_quant 0.99 path/to/file.bedgraph
+  ```
