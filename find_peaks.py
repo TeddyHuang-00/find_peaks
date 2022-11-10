@@ -207,12 +207,10 @@ def call_peaks_unified_redux(
                     if count >= args.min_count:
                         # record peak
                         if real:
-                            peak_count_real[pm] = peak_count_real.get(pm, dict())
                             peak_count_real[pm][count] = (
                                 peak_count_real[pm].get(count, 0) + 1
                             )
                             mean_pscore = round(pscore / (pend - pstart) * 1000, 2)
-                            peaks[pm] = peaks.get(pm, list())
                             peaks[pm].append(
                                 (
                                     chrom,
@@ -225,7 +223,6 @@ def call_peaks_unified_redux(
                                 )
                             )
                         else:
-                            peak_count[pm] = peak_count.get(pm, dict())
                             peak_count[pm][count] = peak_count[pm].get(count, 0) + 1
                     # reset
                     pstart = pend = pscore = inpeak = count = 0
@@ -301,7 +298,7 @@ def calculate_regressions(
 
         # store values
         regression[pm] = (a, b)
-        file_handle.write(f"regression: log(y) = {a}x + {b}\n")
+        file_handle.write(f"regression: log(y) = {a}(x) + {b}\n")
 
         for c in peak_count[pm].keys():
             if not peak_count[pm][c]:
@@ -342,7 +339,7 @@ def calculate_fdr(
     file_handle.write("\n")
     for pm in peakmins:
         file_handle.write(f"Peak min = {pm}\n")
-        for c in fdr[pm].keys():
+        for c in sorted(fdr[pm].keys()):
             file_handle.write(
                 f"Peak size: {c}\tCount: {peak_count_real[pm][c]}\tFDR: {fdr[pm][c]}\n"
             )
