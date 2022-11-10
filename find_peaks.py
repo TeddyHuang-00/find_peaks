@@ -27,7 +27,30 @@ import os
 import random
 import sys
 from io import TextIOWrapper
-from typing import Optional
+from typing import Optional, NewType
+
+# Basic data model
+CHROM = NewType("CHROM", str)
+POS = NewType("POS", int)
+SCORE = NewType("SCORE", float)
+COUNT = NewType("COUNT", int)
+NUM = NewType("NUM", int)
+LEN = NewType("LEN", int)
+COEFF = NewType("COEFF", float)
+FDR = NewType("FDR", float)
+COMMENT = NewType("COMMENT", str)
+_PH = NewType("_PH", str)  # place holder
+
+# Directly derived types
+START = NewType("START", POS)
+END = NewType("END", POS)
+THRESH = NewType("THRESH", SCORE)
+
+# Extended data models
+PROBE = tuple[CHROM, START, END, SCORE]
+PEAK = tuple[CHROM, START, END, SCORE, SCORE, COUNT, LEN]
+SIG_PEAK = tuple[CHROM, START, END, SCORE, SCORE, COUNT, LEN, FDR]
+OUTPUT_PEAK = tuple[CHROM, _PH, _PH, START, END, SCORE, _PH, _PH, COMMENT]
 
 version = "1.0.1"
 
@@ -94,13 +117,13 @@ args = parser.parse_args()
 random.seed(args.seed)
 
 
-def load_gff(fn) -> list[tuple[str, int, int, float]]:
+def load_gff(fn: str) -> list[PROBE]:
     global args
     sys.stderr.write(f"Reading input file: {fn} ...\n")
     with open(fn, "r") as f:
         lines = f.readlines()
     sys.stderr.write(f"Read {len(lines)} lines\n")
-    parsed_result: list[tuple[str, int, int, float]] = list()
+    parsed_result: list[PROBE] = list()
     for line in lines:
         ll = line.strip().split("\t")
         # skip empty lines
@@ -114,20 +137,23 @@ def load_gff(fn) -> list[tuple[str, int, int, float]]:
             chrom = ll[0]
             start, end, score = ll[3:6]
         parsed_result.append(
-            (chrom, int(start), int(end), float(score) if score != "NA" else 0)
+            (
+                CHROM(chrom),
+                START(POS(int(start))),
+                END(POS(int(end))),
+                SCORE(float(score) if score != "NA" else 0),
+            )
         )
     sys.stderr.write("Sorting ...\n")
     parsed_result = sorted(parsed_result, key=lambda x: (x[0], x[1]))
     return parsed_result
 
 
-def find_quant(probes: list[tuple[str, int, int, float]]):
+def find_quant(probes: list[PROBE]):
     global args
     total_coverage = 0
-    frags: list[float] = list()
-    for (chrom, start, end, score) in probes:
-        if not score:
-            continue
+    frags: list[SCORE] = list()
+    for (chrom, start, end, score) in filter(lambda x: x[3], probes):
         total_coverage += end - start
         frags.append(score)
     frags = sorted(frags)
@@ -138,19 +164,17 @@ def find_quant(probes: list[tuple[str, int, int, float]]):
     ]
     for cut_off, score_idx in quants:
         sys.stdout.write(f"\tQuantile {cut_off:0.2f}: {frags[score_idx]:0.2f}\n")
-    peakmins = [frags[score_idx] for (_, score_idx) in quants]
+    peakmins = [THRESH(frags[score_idx]) for (_, score_idx) in quants]
     return peakmins
 
 
 def call_peaks_unified_redux(
     iter_num: int,
-    probes: list[tuple[str, int, int, float]],
-    peakmins: list[float],
-    peaks: Optional[
-        dict[float, list[tuple[str, int, int, float, float, int, int]]]
-    ] = None,
-    peak_count: Optional[dict[float, dict[int, int]]] = None,
-    peak_count_real: Optional[dict[float, dict[int, int]]] = None,
+    probes: list[PROBE],
+    peakmins: list[THRESH],
+    peaks: Optional[dict[THRESH, list[PEAK]]] = None,
+    peak_count: Optional[dict[THRESH, dict[COUNT, NUM]]] = None,
+    peak_count_real: Optional[dict[THRESH, dict[COUNT, NUM]]] = None,
     real: bool = False,
 ):
     global args
@@ -165,7 +189,11 @@ def call_peaks_unified_redux(
         peak_count_real = dict()
     if not peaks:
         peaks = dict()
-    pstart = pend = pscore = inpeak = count = 0
+    pstart = START(POS(0))
+    pend = END(POS(0))
+    pscore = SCORE(0)
+    inpeak = False
+    count = COUNT(0)
     old_chrom = ""
     for pm in peakmins:
         peaks[pm] = peaks.get(pm, list())
@@ -176,35 +204,41 @@ def call_peaks_unified_redux(
                 if chrom != old_chrom:
                     # Next chromosome
                     # (Peaks can't carry over chromosomes, but we don't use this shortcut when randomly shuffling)
-                    pstart = pend = pscore = inpeak = count = 0
+                    pstart = START(POS(0))
+                    pend = END(POS(0))
+                    pscore = SCORE(0)
+                    inpeak = False
+                    count = COUNT(0)
                 old_chrom = chrom
             if not inpeak:
                 if score >= pm:
                     # record new peak
                     pstart = start
                     pend = end
-                    pscore = score * (end - start) / 1000
-                    inpeak = 1
-                    count += 1
+                    pscore = SCORE(score * (end - start) / 1000)
+                    inpeak = True
+                    count = COUNT(count + 1)
                 else:
                     continue
             else:
                 if score >= pm:
                     # still in peak
-                    count += 1
+                    count = COUNT(count + 1)
                     # Fragment score to deal with scoring peaks made from uneven sized fragments
-                    fragment_score = score * (end - start) / 1000
-                    pscore += fragment_score
+                    fragment_score = SCORE(score * (end - start) / 1000)
+                    pscore = SCORE(pscore + fragment_score)
                     pend = end
                 else:
                     # Out of a peak
                     if count >= args.min_count:
                         # record peak
                         if real:
-                            peak_count_real[pm][count] = (
+                            peak_count_real[pm][count] = NUM(
                                 peak_count_real[pm].get(count, 0) + 1
                             )
-                            mean_pscore = round(pscore / (pend - pstart) * 1000, 2)
+                            mean_pscore = SCORE(
+                                round(pscore / (pend - pstart) * 1000, 2)
+                            )
                             peaks[pm].append(
                                 (
                                     chrom,
@@ -213,21 +247,25 @@ def call_peaks_unified_redux(
                                     mean_pscore,
                                     pscore,
                                     count,
-                                    pend - pstart,
+                                    LEN(pend - pstart),
                                 )
                             )
                         else:
-                            peak_count[pm][count] = peak_count[pm].get(count, 0) + 1
+                            peak_count[pm][count] = NUM(
+                                peak_count[pm].get(count, 0) + 1
+                            )
                     # reset
-                    pstart = pend = pscore = inpeak = count = 0
+                    pstart = START(POS(0))
+                    pend = END(POS(0))
+                    pscore = SCORE(0)
+                    inpeak = False
+                    count = COUNT(0)
     if real:
         return peaks, peak_count_real
     return peaks, peak_count
 
 
-def find_randomised_peaks(
-    probes: list[tuple[str, int, int, float]], peakmins: list[float]
-):
+def find_randomised_peaks(probes: list[PROBE], peakmins: list[THRESH]):
     global args
     peak_count = None
     sys.stdout.write("Duplicating ...\n")
@@ -247,9 +285,9 @@ def find_randomised_peaks(
 
 
 def calculate_regressions(
-    probes: list[tuple[str, int, int, float]],
-    peakmins: list[float],
-    peak_count: dict[float, dict[int, int]],
+    probes: list[PROBE],
+    peakmins: list[THRESH],
+    peak_count: dict[THRESH, dict[COUNT, NUM]],
     file_handle: TextIOWrapper,
 ):
     global args
@@ -306,14 +344,14 @@ def calculate_regressions(
 
 
 def calculate_fdr(
-    peakmins: list[float],
-    regression: dict[float, tuple[float, float]],
-    peak_count_real: dict[float, dict[int, int]],
+    peakmins: list[THRESH],
+    regression: dict[THRESH, tuple[COEFF, COEFF]],
+    peak_count_real: dict[THRESH, dict[COUNT, NUM]],
     file_handle: TextIOWrapper,
 ):
     global args
-    fdr: dict[float, dict[int, float]] = dict()
-    peak_fdr_cutoff: dict[float, int] = dict()
+    fdr: dict[THRESH, dict[COUNT, FDR]] = dict()
+    peak_fdr_cutoff: dict[THRESH, COUNT] = dict()
     for pm in peakmins:
         fdr[pm] = fdr.get(pm, dict())
         # get regression variables
@@ -326,7 +364,7 @@ def calculate_fdr(
             expect = 10 ** (a * c + b)
             real_count = peak_count_real[pm][c]
             fdr_conservative = expect / real_count
-            fdr[pm][c] = fdr_conservative
+            fdr[pm][c] = FDR(fdr_conservative)
     # print FDR rates
     file_handle.write("\n")
     for pm in peakmins:
@@ -335,10 +373,10 @@ def calculate_fdr(
             file_handle.write(
                 f"Peak size: {c}\tCount: {peak_count_real[pm][c]}\tFDR: {fdr[pm][c]}\n"
             )
-            if fdr[pm][c] < args.fdr and not peak_fdr_cutoff.get(pm, 0):
+            if fdr[pm][c] < args.fdr and not peak_fdr_cutoff.get(pm):
                 peak_fdr_cutoff[pm] = c
         # clumsy hack to prevent errors
-        peak_fdr_cutoff[pm] = peak_fdr_cutoff.get(pm, int(1e10))
+        peak_fdr_cutoff[pm] = peak_fdr_cutoff.get(pm, COUNT(int(1e10)))
         file_handle.write("\n")
 
     for pm in peakmins:
@@ -349,13 +387,14 @@ def calculate_fdr(
 
 
 def find_significant_peaks(
-    peaks: dict[float, list[tuple[str, int, int, float, float, int, int]]],
-    peakmins: list[float],
-    fdr: dict[float, dict[int, float]],
-    peak_fdr_cutoff: dict[float, int],
+    peaks: dict[THRESH, list[PEAK]],
+    peakmins: list[THRESH],
+    fdr: dict[THRESH, dict[COUNT, FDR]],
+    peak_fdr_cutoff: dict[THRESH, COUNT],
 ):
     global args
-    sig_peaks: list[tuple[str, int, int, float, float, int, int, float]] = list()
+    sig_peaks: list[SIG_PEAK] = list()
+    # Generate significant peaks and unify peaks
     sys.stderr.write("Selecting significant peaks ...\n")
     for pm in peakmins:
         for chrom, pstart, pend, mean_pscore, pscore, count, size in peaks[pm]:
@@ -372,16 +411,17 @@ def find_significant_peaks(
                         fdr[pm][count],
                     )
                 )
+    sys.stdout.write(f"\nNumber of peaks: {len(sig_peaks)}\n")
     return sig_peaks
 
 
 def make_unified_peaks(
-    sig_peaks: list[tuple[str, int, int, float, float, int, int, float]],
+    sig_peaks: list[SIG_PEAK],
     out_file: str,
 ):
     global args
     # Unify overlapping peaks, and make significant peaks file
-    unified_peaks: list[tuple[str, str, str, int, int, float, str, str, str]] = list()
+    unified_peaks: list[OUTPUT_PEAK] = list()
     total = len(sig_peaks)
     i = 0
     sys.stderr.write("Combining significant peaks ...\n")
@@ -389,9 +429,7 @@ def make_unified_peaks(
     # unroll chromosomes for speed
     for chrom in set([x[0] for x in sig_peaks]):
         sig_peaks_in_chrom = filter(lambda x: x[0] == chrom, sig_peaks)
-        unified_peaks_chr: list[
-            tuple[str, str, str, int, int, float, str, str, str]
-        ] = list()
+        unified_peaks_chr: list[OUTPUT_PEAK] = list()
         for (
             chrom,
             start,
@@ -431,7 +469,17 @@ def make_unified_peaks(
                 fdr = min(fdr, fdr_o)
 
             unified_peaks_chr.append(
-                (chrom, ".", ".", start, end, score, ".", ".", f"FDR={fdr}")
+                (
+                    chrom,
+                    _PH("."),
+                    _PH("."),
+                    start,
+                    end,
+                    score,
+                    _PH("."),
+                    _PH("."),
+                    COMMENT(f"FDR={fdr}"),
+                )
             )
         unified_peaks += unified_peaks_chr
     sys.stderr.write("Sorting unified peaks ...\n")
@@ -451,7 +499,7 @@ def main():
         dir, (name, ext) = (os.path.dirname(fn), os.path.splitext(os.path.basename(fn)))
 
         # Output file names
-        fn_base_date = "peak_analysis." + name + "." + date
+        fn_base_date = "peak_analysis." + name + _PH(".") + date
         base_dir = os.path.join(dir, fn_base_date)
         out = os.path.join(base_dir, name + f"-FDR{args.fdr:.2f}")
         out_peak_unified_track = out + ".peaks.gff"
