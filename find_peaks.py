@@ -370,7 +370,7 @@ def find_significant_peaks(
     sys.stderr.write("Selecting significant peaks ...\n")
     for pm in peakmins:
         for chrom, pstart, pend, mean_pscore, pscore, count, size in peaks[pm]:
-            if count > peak_fdr_cutoff[pm]:
+            if count >= peak_fdr_cutoff[pm]:
                 sig_peaks.append(
                     (
                         chrom,
