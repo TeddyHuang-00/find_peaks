@@ -102,6 +102,11 @@ parser.add_argument(
     help="Method for calling peak overlaps (two options):\n\t'min': call minimum overlapping peak area\n\t'max': call maximum overlap as peak",
 )
 parser.add_argument(
+    "--no_discard_zeros",
+    action="store_true",
+    help="Treat zero scores as non-empty reads in raw data",
+)
+parser.add_argument(
     "--seed",
     type=int,
     default=0,
@@ -144,7 +149,7 @@ def load_gff(fn: str) -> list[PROBE]:
         # increment raw reads number
         RAW_READS_NUM += 1
         # skip empty reads
-        if score == "NA" or not float(score):
+        if not args.no_discard_zeros and (score == "NA" or not float(score)):
             continue
         # record read
         parsed_result.append(
@@ -152,7 +157,7 @@ def load_gff(fn: str) -> list[PROBE]:
                 CHROM(chrom),
                 START(POS(int(start))),
                 END(POS(int(end))),
-                SCORE(float(score)),
+                SCORE(float(score) if score != "NA" else 0),
             )
         )
         # record total coverage
@@ -288,7 +293,9 @@ def find_randomised_peaks(probes: list[PROBE], peakmins: list[THRESH]):
         if args.frac:
             num_to_sample = sum(
                 map(
-                    lambda x: x <= int(RAW_READS_NUM * args.frac),
+                    # This makes sure that it works for both
+                    # data including and excluding empty reads
+                    lambda x: x <= int(len(probes) * args.frac),
                     random.sample(range(RAW_READS_NUM), int(RAW_READS_NUM * args.frac)),
                 )
             )
