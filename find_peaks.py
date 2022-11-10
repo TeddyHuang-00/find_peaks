@@ -134,9 +134,7 @@ def find_quant(probes: list[tuple[str, int, int, float]]):
     sys.stderr.write(f"Total coverage was {total_coverage} bp\n")
     quants = [
         (q * args.step, int(q * args.step * len(frags)) - 1)
-        for q in range(
-            math.ceil(args.min_quant / args.step), math.ceil(1 / args.step) + 1
-        )
+        for q in range(math.ceil(args.min_quant / args.step), math.ceil(1 / args.step))
     ]
     for cut_off, score_idx in quants:
         sys.stdout.write(f"\tQuantile {cut_off:0.2f}: {frags[score_idx]:0.2f}\n")
@@ -156,7 +154,6 @@ def call_peaks_unified_redux(
     real: bool = False,
 ):
     global args
-    total = len(probes)
 
     if real:
         sys.stderr.write("Calling real peaks ...\r")
@@ -175,10 +172,7 @@ def call_peaks_unified_redux(
         peaks[pm] = peaks.get(pm, list())
         peak_count[pm] = peak_count.get(pm, dict())
         peak_count_real[pm] = peak_count_real.get(pm, dict())
-        for i in range(total):
-            chrom, start, end, score = probes[i]
-            if not score:
-                continue
+        for chrom, start, end, score in filter(lambda x: x[3], probes):
             if real:
                 if chrom != old_chrom:
                     # Next chromosome
@@ -254,6 +248,8 @@ def find_randomised_peaks(
         sys.stdout.write(f"Iteration {iter_num+1}: [shuffling]\r")
         if args.frac:
             pbs = pbs[: args.frac]
+        # The built-in shuffle uses the same algorithm (Fisher-Yates)
+        # as the original Perl program
         random.shuffle(pbs)
         _, peak_count = call_peaks_unified_redux(
             iter_num, pbs, peakmins, None, peak_count
@@ -449,7 +445,6 @@ def make_unified_peaks(
                 (chrom, ".", ".", start, end, score, ".", ".", f"FDR={fdr}")
             )
         unified_peaks += unified_peaks_chr
-    total = len(unified_peaks)
     sys.stderr.write("Sorting unified peaks ...\n")
     unified_peaks = sorted(unified_peaks, key=lambda x: (x[0], x[3]))
     sys.stderr.write("Writing unified peaks file ...\n")
