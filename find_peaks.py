@@ -52,7 +52,7 @@ PEAK = tuple[CHROM, START, END, SCORE, SCORE, COUNT, LEN]
 SIG_PEAK = tuple[CHROM, START, END, SCORE, SCORE, COUNT, LEN, FDR]
 OUTPUT_PEAK = tuple[CHROM, _PH, _PH, START, END, SCORE, _PH, _PH, COMMENT]
 
-version = "1.0.1"
+version = "1.1.0"
 
 parser = argparse.ArgumentParser(
     description="Simple FDR random permutation peak caller",
@@ -72,9 +72,9 @@ parser.add_argument(
 )
 parser.add_argument(
     "--frac",
-    type=int,
+    type=float,
     default=0,
-    help="Number of random fragments to consider per iteration",
+    help="Fraction of random fragments to consider per iteration (0..1)",
 )
 parser.add_argument(
     "--min_count",
@@ -114,11 +114,16 @@ parser.add_argument(
     help="Input files in bedgraph or GFF format",
 )
 args = parser.parse_args()
+
+assert 0 <= args.frac <= 1, "Fraction must be between 0 and 1"
 random.seed(args.seed)
+
+RAW_READS_NUM: int = 0
 
 
 def load_gff(fn: str) -> list[PROBE]:
-    global args
+    global args, RAW_READS_NUM
+    total_coverage = 0
     sys.stderr.write(f"Reading input file: {fn} ...\n")
     with open(fn, "r") as f:
         lines = f.readlines()
@@ -136,28 +141,32 @@ def load_gff(fn: str) -> list[PROBE]:
             # GFF
             chrom = ll[0]
             start, end, score = ll[3:6]
+        # increment raw reads number
+        RAW_READS_NUM += 1
+        # skip empty reads
+        if score == "NA" or not float(score):
+            continue
+        # record read
         parsed_result.append(
             (
                 CHROM(chrom),
                 START(POS(int(start))),
                 END(POS(int(end))),
-                SCORE(float(score) if score != "NA" else 0),
+                SCORE(float(score)),
             )
         )
+        # record total coverage
+        total_coverage += int(end) - int(start)
     sys.stderr.write("Sorting ...\n")
     parsed_result = sorted(parsed_result, key=lambda x: (x[0], x[1]))
+    sys.stderr.write(f"Total coverage was {total_coverage} bp\n")
     return parsed_result
 
 
 def find_quant(probes: list[PROBE]):
     global args
-    total_coverage = 0
-    frags: list[SCORE] = list()
-    for (chrom, start, end, score) in filter(lambda x: x[3], probes):
-        total_coverage += end - start
-        frags.append(score)
+    frags = [x[3] for x in probes]
     frags = sorted(frags)
-    sys.stderr.write(f"Total coverage was {total_coverage} bp\n")
     quants = [
         (q * args.step, int(q * args.step * len(frags)) - 1)
         for q in range(math.ceil(args.min_quant / args.step), math.ceil(1 / args.step))
@@ -199,7 +208,7 @@ def call_peaks_unified_redux(
         peaks[pm] = peaks.get(pm, list())
         peak_count[pm] = peak_count.get(pm, dict())
         peak_count_real[pm] = peak_count_real.get(pm, dict())
-        for chrom, start, end, score in filter(lambda x: x[3], probes):
+        for chrom, start, end, score in probes:
             if real:
                 if chrom != old_chrom:
                     # Next chromosome
@@ -266,15 +275,24 @@ def call_peaks_unified_redux(
 
 
 def find_randomised_peaks(probes: list[PROBE], peakmins: list[THRESH]):
-    global args
+    global args, RAW_READS_NUM
     peak_count = None
     sys.stdout.write("Duplicating ...\n")
     pbs = probes.copy()
     sys.stdout.write("Calling peaks on input file ...\n")
     for iter_num in range(args.n):
         sys.stdout.write(f"Iteration {iter_num+1}: [shuffling]\r")
+        # This is a naive approximation to randomly sample a fraction
+        # as the full sequence doesn't contain empty reads
+        # (but no worse than the original approach anyway)
         if args.frac:
-            pbs = pbs[: args.frac]
+            num_to_sample = sum(
+                map(
+                    lambda x: x <= int(RAW_READS_NUM * args.frac),
+                    random.sample(range(RAW_READS_NUM), int(RAW_READS_NUM * args.frac)),
+                )
+            )
+            pbs = random.sample(probes, num_to_sample)
         # The built-in shuffle uses the same algorithm (Fisher-Yates)
         # as the original Perl program
         random.shuffle(pbs)
@@ -285,7 +303,6 @@ def find_randomised_peaks(probes: list[PROBE], peakmins: list[THRESH]):
 
 
 def calculate_regressions(
-    probes: list[PROBE],
     peakmins: list[THRESH],
     peak_count: dict[THRESH, dict[COUNT, NUM]],
     file_handle: TextIOWrapper,
@@ -293,7 +310,6 @@ def calculate_regressions(
     global args
     log_scores = dict()
     regression = dict()
-    num = len(probes)
     for pm in peakmins:
         file_handle.write(f"Peak min = {pm}\n")
         for c in peak_count[pm].keys():
@@ -301,7 +317,7 @@ def calculate_regressions(
             if not peak_count_avg:
                 continue
             if args.frac:
-                peak_count_avg *= num / args.frac
+                peak_count_avg /= args.frac
             log_scores[pm] = log_scores.get(pm, dict())
             log_scores[pm][c] = math.log10(peak_count_avg)
             file_handle.write(f"Peak size: {c}\tCount: {peak_count_avg}\n")
@@ -518,9 +534,7 @@ def main():
             # Write header
             f.write(f"FDR peak call v{version}\n\n")
             f.write(f"Input file: {fn}\n")
-            log_scores, regression = calculate_regressions(
-                probes, peakmins, peak_count, f
-            )
+            log_scores, regression = calculate_regressions(peakmins, peak_count, f)
             # peaks were only recorded if they were real
             peaks, peak_count_real = call_peaks_unified_redux(
                 1, probes, peakmins, real=True
