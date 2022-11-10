@@ -372,6 +372,17 @@ def calculate_fdr(
         fdr[pm] = fdr.get(pm, dict())
         # get regression variables
         if not regression.get(pm):
+            # This happens when there are only one sized peaks found in random sampling
+            sys.stderr.write(
+                f"WARNING: No regression result found for peak min value of {pm}, "
+                + f"try using a higher N than {args.N} for sufficient sampling"
+                + (
+                    f", or using a lower min_count than {args.min_count} for more peaks"
+                    if args.min_count > 2
+                    else ""
+                )
+                + "!"
+            )
             continue
         a, b = regression[pm]
         for c in peak_count_real[pm].keys():
