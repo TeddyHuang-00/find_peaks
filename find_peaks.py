@@ -166,7 +166,6 @@ def call_peaks_unified_redux(
     if not peaks:
         peaks = dict()
     pstart = pend = pscore = inpeak = count = 0
-    tmp_peak = list()
     old_chrom = ""
     for pm in peakmins:
         peaks[pm] = peaks.get(pm, list())
@@ -178,8 +177,7 @@ def call_peaks_unified_redux(
                     # Next chromosome
                     # (Peaks can't carry over chromosomes, but we don't use this shortcut when randomly shuffling)
                     pstart = pend = pscore = inpeak = count = 0
-                    tmp_peak = list()
-            old_chrom = chrom if real else old_chrom
+                old_chrom = chrom
             if not inpeak:
                 if score >= pm:
                     # record new peak
@@ -188,8 +186,6 @@ def call_peaks_unified_redux(
                     pscore = score * (end - start) / 1000
                     inpeak = 1
                     count += 1
-                    if real:
-                        tmp_peak.append(score)
                 else:
                     continue
             else:
@@ -198,8 +194,6 @@ def call_peaks_unified_redux(
                     count += 1
                     # Fragment score to deal with scoring peaks made from uneven sized fragments
                     fragment_score = score * (end - start) / 1000
-                    if real:
-                        tmp_peak.append(score)
                     pscore += fragment_score
                     pend = end
                 else:
@@ -226,8 +220,6 @@ def call_peaks_unified_redux(
                             peak_count[pm][count] = peak_count[pm].get(count, 0) + 1
                     # reset
                     pstart = pend = pscore = inpeak = count = 0
-                    if real:
-                        tmp_peak = list()
     if real:
         return peaks, peak_count_real
     return peaks, peak_count
