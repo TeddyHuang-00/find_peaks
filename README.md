@@ -1,6 +1,8 @@
 # find_peaks
 
-This is a Python port of the [find_peaks](https://github.com/owenjm/find_peaks) program written in Perl. **And now it runs at lightning speed! (~120 times faster than original)**
+This is a Python port of the [find_peaks](https://github.com/owenjm/find_peaks) program written in Perl. **And now it runs at a blazing fast speed! (~120 times faster than original)**
+
+![Demo at real time speed](example/demo.gif)
 
 ## Requirements
 

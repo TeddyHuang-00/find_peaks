@@ -197,7 +197,7 @@ def call_peaks_unified_redux(
     global args
 
     if real:
-        sys.stderr.write("Calling real peaks ...\r")
+        sys.stderr.write("Calling real peaks ...                   \r")
     else:
         sys.stderr.write(f"Iteration {iter_num+1}: [processing ...]\r")
     if not peak_count:
@@ -289,7 +289,7 @@ def find_randomised_peaks(probes: list[PROBE], peakmins: list[THRESH]):
     pbs = probes.copy()
     sys.stdout.write("Calling peaks on input file ...\n")
     for iter_num in range(args.n):
-        sys.stdout.write(f"Iteration {iter_num+1}: [shuffling]\r")
+        sys.stdout.write(f"Iteration {iter_num+1}: [shuffling ...]      \r")
         # This is a naive approximation to randomly sample a fraction
         # as the full sequence doesn't contain empty reads
         # (but no worse than the original approach anyway)
