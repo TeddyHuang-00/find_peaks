@@ -318,8 +318,8 @@ def calculate_regressions(
     file_handle: TextIOWrapper,
 ):
     global args
-    log_scores = dict()
-    regression = dict()
+    log_scores: dict[THRESH, dict[COUNT, SCORE]] = dict()
+    regression: dict[THRESH, tuple[COEFF, COEFF]] = dict()
     for pm in peakmins:
         file_handle.write(f"Peak min = {pm}\n")
         for c in peak_count[pm].keys():
@@ -329,7 +329,7 @@ def calculate_regressions(
             if args.frac:
                 peak_count_avg /= args.frac
             log_scores[pm] = log_scores.get(pm, dict())
-            log_scores[pm][c] = math.log10(peak_count_avg)
+            log_scores[pm][c] = SCORE(math.log10(peak_count_avg))
             file_handle.write(f"Peak size: {c}\tCount: {peak_count_avg}\n")
         # calculate exponential decay rates
         # y = ax+b for log(y)
@@ -349,8 +349,8 @@ def calculate_regressions(
         mean_y = sumy / n
         mean_x2 = sumx2 / n
         mean_xy = sumxy / n
-        a = (mean_xy - mean_x * mean_y) / (mean_x2 - mean_x**2)
-        b = mean_y - a * mean_x
+        a = COEFF((mean_xy - mean_x * mean_y) / (mean_x2 - mean_x**2))
+        b = COEFF(mean_y - a * mean_x)
 
         # store values
         regression[pm] = (a, b)
