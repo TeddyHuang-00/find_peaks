@@ -128,40 +128,43 @@ RAW_READS_NUM: int = 0
 
 def load_gff(fn: str) -> list[PROBE]:
     global args, RAW_READS_NUM
+    line_num = 0
     total_coverage = 0
+    parsed_result: list[PROBE] = list()
     sys.stderr.write(f"Reading input file: {fn} ...\n")
     with open(fn, "r") as f:
-        lines = f.readlines()
-    sys.stderr.write(f"Read {len(lines)} lines\n")
-    parsed_result: list[PROBE] = list()
-    for line in lines:
-        ll = line.strip().split("\t")
-        # skip empty lines
-        if len(ll) < 4:
-            continue
-        if len(ll) == 4:
-            # bedgraph
-            chrom, start, end, score = ll
-        else:
-            # GFF
-            chrom = ll[0]
-            start, end, score = ll[3:6]
-        # increment raw reads number
-        RAW_READS_NUM += 1
-        # skip empty reads
-        if not args.no_discard_zeros and (score == "NA" or not float(score)):
-            continue
-        # record read
-        parsed_result.append(
-            (
-                CHROM(chrom),
-                START(POS(int(start))),
-                END(POS(int(end))),
-                SCORE(float(score) if score != "NA" else 0),
+        for line in f:
+            line_num += 1
+            if line_num % 10000 == 0:
+                sys.stderr.write(f"Read {line_num} lines\r")
+            ll = line.strip().split("\t")
+            # skip empty lines
+            if len(ll) < 4:
+                continue
+            if len(ll) == 4:
+                # bedgraph
+                chrom, start, end, score = ll
+            else:
+                # GFF
+                chrom = ll[0]
+                start, end, score = ll[3:6]
+            # increment raw reads number
+            RAW_READS_NUM += 1
+            # skip empty reads
+            if not args.no_discard_zeros and (score == "NA" or not float(score)):
+                continue
+            # record read
+            parsed_result.append(
+                (
+                    CHROM(chrom),
+                    START(POS(int(start))),
+                    END(POS(int(end))),
+                    SCORE(float(score) if score != "NA" else 0),
+                )
             )
-        )
-        # record total coverage
-        total_coverage += int(end) - int(start)
+            # record total coverage
+            total_coverage += int(end) - int(start)
+    sys.stderr.write(f"Read {line_num} lines\n")
     sys.stderr.write("Sorting ...\n")
     parsed_result = sorted(parsed_result, key=lambda x: (x[0], x[1]))
     sys.stderr.write(f"Total coverage was {total_coverage} bp\n")
